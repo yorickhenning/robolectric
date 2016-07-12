@@ -238,6 +238,11 @@ public class DefaultPackageManager extends StubPackageManager implements Robolec
   }
 
   @Override
+  public ProviderInfo getProviderInfo(ComponentName componentName, int i) throws NameNotFoundException {
+    return new ProviderInfo();
+  }
+
+  @Override
   public List<PackageInfo> getInstalledPackages(int flags) {
     return new ArrayList<>(packageInfos.values());
   }
