@@ -9,10 +9,9 @@ import org.robolectric.util.ReflectionHelpers;
 import java.io.File;
 
 /* package */ class GradleManifestFactory extends ManifestFactory {
-  private final Config config;
 
   GradleManifestFactory(Config config) {
-    this.config = config;
+    super(config);
   }
 
   @Override
@@ -52,10 +51,11 @@ import java.io.File;
       assets = FileFsFile.from(buildOutputDir, "bundles", flavor, type, "assets");
     }
 
+    String manifestFileName = getManifestFileName();
     if (FileFsFile.from(buildOutputDir, "manifests").exists()) {
-      manifest = FileFsFile.from(buildOutputDir, "manifests", "full", flavor, abiSplit, type, DEFAULT_MANIFEST_NAME);
+      manifest = FileFsFile.from(buildOutputDir, "manifests", "full", flavor, abiSplit, type, manifestFileName);
     } else {
-      manifest = FileFsFile.from(buildOutputDir, "bundles", flavor, abiSplit, type, DEFAULT_MANIFEST_NAME);
+      manifest = FileFsFile.from(buildOutputDir, "bundles", flavor, abiSplit, type, manifestFileName);
     }
 
     Logger.debug("Robolectric assets directory: " + assets.getPath());
