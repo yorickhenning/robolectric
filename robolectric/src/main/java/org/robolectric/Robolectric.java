@@ -3,16 +3,28 @@ package org.robolectric;
 import android.app.Activity;
 import android.app.Fragment;
 import android.app.Service;
+import android.content.ContentProvider;
 import android.content.Intent;
 
+import android.util.AttributeSet;
+import android.view.View;
+import org.robolectric.res.ResName;
+import org.robolectric.res.ResourceLoader;
 import org.robolectric.shadows.ShadowApplication;
 import org.robolectric.util.ActivityController;
+import org.robolectric.util.ContentProviderController;
 import org.robolectric.util.FragmentController;
 import org.robolectric.util.ReflectionHelpers;
 import org.robolectric.util.Scheduler;
 import org.robolectric.util.ServiceController;
+import org.robolectric.res.builder.ResourceParser.XmlResourceParserImpl;
 import org.robolectric.internal.ShadowProvider;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 import java.util.ServiceLoader;
 
 public class Robolectric {
@@ -60,6 +72,14 @@ public class Robolectric {
     return buildService(serviceClass).create().get();
   }
 
+  public static <T extends ContentProvider> ContentProviderController<T> buildContentProvider(Class<T> contentProviderClass) {
+    return ContentProviderController.of(ReflectionHelpers.callConstructor(contentProviderClass));
+  }
+
+  public static <T extends ContentProvider> T setupContentProvider(Class<T> contentProviderClass) {
+    return buildContentProvider(contentProviderClass).create().get();
+  }
+
   public static <T extends Activity> ActivityController<T> buildActivity(Class<T> activityClass) {
     return buildActivity(activityClass, null);
   }
@@ -88,6 +108,69 @@ public class Robolectric {
     return FragmentController.of(ReflectionHelpers.callConstructor(fragmentClass), activityClass, intent);
   }
 
+  /**
+   * Allows for the programatic creation of an {@link AttributeSet} useful for testing {@link View} classes without
+   * the need for creating XML snippets.
+   */
+  public static AttributeSetBuilder buildAttributeSet() {
+    DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+    factory.setNamespaceAware(true);
+    factory.setIgnoringComments(true);
+    factory.setIgnoringElementContentWhitespace(true);
+    Document document;
+    try {
+      DocumentBuilder documentBuilder = factory.newDocumentBuilder();
+      document = documentBuilder.newDocument();
+      Element dummy = document.createElementNS("http://schemas.android.com/apk/res/" + RuntimeEnvironment.application.getPackageName(), "dummy");
+      document.appendChild(dummy);
+    } catch (ParserConfigurationException e) {
+      throw new RuntimeException(e);
+    }
+    ResourceLoader resourceLoader = Shadows.shadowOf(
+        RuntimeEnvironment.application.getResources().getAssets()).getResourceLoader();
+    return new AttributeSetBuilder(document, resourceLoader);
+  }
+
+  public static class AttributeSetBuilder {
+
+    private Document doc;
+    private ResourceLoader appResourceLoader;
+
+    AttributeSetBuilder(Document doc, ResourceLoader resourceLoader) {
+      this.doc = doc;
+      this.appResourceLoader = resourceLoader;
+    }
+
+    public AttributeSetBuilder addAttribute(int resId, String value) {
+      ResName resName = appResourceLoader.getResourceIndex().getResName(resId);
+      if ("style".equals(resName.name)) {
+        ((Element)doc.getFirstChild()).setAttribute(resName.name, value);
+      } else {
+        ((Element)doc.getFirstChild()).setAttributeNS(resName.getNamespaceUri(), resName.packageName + ":" + resName.name, value);
+      }
+      return this;
+    }
+
+    public AttributeSetBuilder setStyleAttribute(String value) {
+      ((Element)doc.getFirstChild()).setAttribute("style", value);
+      return this;
+    }
+
+    public AttributeSet build() {
+      XmlResourceParserImpl parser = new XmlResourceParserImpl(doc, null,
+          RuntimeEnvironment.application.getPackageName(),
+          RuntimeEnvironment.application.getPackageName(),
+          appResourceLoader.getResourceIndex());
+      try {
+        parser.next(); // Root document element
+        parser.next(); // "dummy" element
+      } catch (Exception e) {
+        throw new IllegalStateException("Expected single dummy element in the document to contain the attributes.", e);
+      }
+
+      return parser;
+    }
+  }
 
   /**
    * Return the foreground scheduler (e.g. the UI thread scheduler).

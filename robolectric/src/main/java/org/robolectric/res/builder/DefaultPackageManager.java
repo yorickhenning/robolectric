@@ -21,6 +21,7 @@ import com.google.common.base.Function;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 
+import org.robolectric.Robolectric;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.ShadowsAdapter;
 import org.robolectric.manifest.ActivityData;
@@ -50,6 +51,11 @@ import java.util.TreeMap;
 
 public class DefaultPackageManager extends StubPackageManager implements RobolectricPackageManager {
 
+  public DefaultPackageManager() {
+    this(Robolectric.getShadowsAdapter());
+  }
+
+  @Deprecated
   public DefaultPackageManager(ShadowsAdapter shadowsAdapter) {
     this.shadowsAdapter = shadowsAdapter;
   }
