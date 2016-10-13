@@ -19,6 +19,7 @@ public class ContentProviderController<T extends ContentProvider> {
   }
 
   public ContentProviderController<T> create() {
+    contentProvider.onCreate();
     return this;
   }
 
