@@ -13,14 +13,13 @@ import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
+import android.os.Binder;
 import android.os.Bundle;
 import android.os.PatternMatcher;
 import android.util.Pair;
-
 import com.google.common.base.Function;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
-
 import org.robolectric.Robolectric;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.ShadowsAdapter;
@@ -50,6 +49,9 @@ import java.util.Set;
 import java.util.TreeMap;
 
 public class DefaultPackageManager extends StubPackageManager implements RobolectricPackageManager {
+
+  private Map<Integer, String> namesForUid = new HashMap<>();
+  private Map<Integer, String[]> packagesForUid = new HashMap<>();
 
   public DefaultPackageManager() {
     this(Robolectric.getShadowsAdapter());
@@ -221,7 +223,7 @@ public class DefaultPackageManager extends StubPackageManager implements Robolec
     }
     return activityInfo;
   }
-  
+
   @Override
   public ServiceInfo getServiceInfo(ComponentName className, int flags) throws NameNotFoundException {
     String packageName = className.getPackageName();
@@ -231,7 +233,7 @@ public class DefaultPackageManager extends StubPackageManager implements Robolec
     if (serviceData == null) {
       throw new NameNotFoundException();
     }
-    
+
     ServiceInfo serviceInfo = new ServiceInfo();
     serviceInfo.packageName = packageName;
     serviceInfo.name = serviceName;
@@ -240,7 +242,7 @@ public class DefaultPackageManager extends StubPackageManager implements Robolec
     if ((flags & GET_META_DATA) != 0) {
       serviceInfo.metaData = metaDataToBundle(serviceData.getMetaData().getValueMap());
     }
-    return serviceInfo;   
+    return serviceInfo;
   }
 
   @Override
@@ -717,6 +719,31 @@ public class DefaultPackageManager extends StubPackageManager implements Robolec
         TempDirectory.destroy(Paths.get(info.applicationInfo.dataDir));
       }
     }
+  }
+
+  @Override
+  public void setNameForUid(int uid, String name) {
+    namesForUid.put(uid, name);
+  }
+
+  @Override
+  public String getNameForUid(int uid) {
+    return namesForUid.get(uid);
+  }
+
+  @Override
+  public void setPackagesForCallingUid(String... packagesForCallingUid) {
+    setPackagesForUid(Binder.getCallingUid(), packagesForCallingUid);
+  }
+
+  @Override
+  public void setPackagesForUid(int uid, String... packagesForCallingUid) {
+    this.packagesForUid.put(uid, packagesForCallingUid);
+  }
+
+  @Override
+  public String[] getPackagesForUid(int uid) {
+    return packagesForUid.get(uid);
   }
 
   /**

@@ -87,6 +87,12 @@ public interface RobolectricPackageManager {
 
   void reset();
 
+  void setNameForUid(int uid, String name);
+
+  void setPackagesForCallingUid(String... packagesForCallingUid);
+
+  void setPackagesForUid(int uid, String... packagesForCallingUid);
+
   class ComponentState {
     public int newState;
     public int flags;
