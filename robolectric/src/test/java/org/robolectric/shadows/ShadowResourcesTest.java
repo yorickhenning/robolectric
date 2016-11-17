@@ -15,7 +15,6 @@ import android.os.Build;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
-import com.google.common.collect.ImmutableMap;
 import org.assertj.core.data.Offset;
 import org.jetbrains.annotations.NotNull;
 import org.junit.Before;
@@ -30,10 +29,8 @@ import org.robolectric.annotation.Config;
 import org.robolectric.res.AttrData;
 import org.robolectric.res.ResName;
 import org.robolectric.res.ResType;
-import org.robolectric.res.ResourceExtractor;
 import org.robolectric.res.ResourceIndex;
 import org.robolectric.res.ResourceLoader;
-import org.robolectric.res.ResourcePath;
 import org.robolectric.res.TypedResource;
 import org.robolectric.res.builder.XmlBlock;
 import org.robolectric.res.builder.XmlResourceParserImpl;
@@ -44,6 +41,7 @@ import java.io.File;
 import java.io.InputStream;
 import java.util.Map;
 
+import static android.os.Build.VERSION_CODES.KITKAT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.fail;
 import static org.robolectric.Shadows.shadowOf;
@@ -342,10 +340,23 @@ public class ShadowResourcesTest {
     assertThat(id).isEqualTo(0);
   }
 
+  /**
+   * Public framework symbols are defined here: https://android.googlesource.com/platform/frameworks/base/+/master/core/res/res/values/public.xml
+   * Private framework symbols are defined here: https://android.googlesource.com/platform/frameworks/base/+/master/core/res/res/values/symbols.xml
+   *
+   * These generate android.R and com.android.internal.R respectively, when Framework Java code does not need to reference a framework resource
+   * it will not have an R value generated. Robolectric is then missing an identifier for this resource so we must generate a placeholder ourselves.
+   */
   @Test
-  public void getIdentifier_missingFromRFile() throws Exception {
-    int identifier_missing_from_r_file = resources.getIdentifier("not_in_the_r_file", "string", RuntimeEnvironment.application.getPackageName());
-    assertThat(resources.getString(identifier_missing_from_r_file)).isEqualTo("Proguarded Out Probably");
+  @Config(minSdk = Build.VERSION_CODES.LOLLIPOP) // android:color/secondary_text_material_dark was added in API 21
+  public void shouldGenerateIdsForResourcesThatAreMissingRValues() throws Exception {
+    int identifier_missing_from_r_file = resources.getIdentifier("secondary_text_material_dark", "color", "android");
+
+    // We expect Robolectric to generate a placeholder identifier where one was not generated in the android R files.
+    assertThat(identifier_missing_from_r_file).isNotEqualTo(0);
+
+    // We expect to be able to successfully android:color/secondary_text_material_dark to a ColorStateList.
+    assertThat(resources.getColorStateList(identifier_missing_from_r_file)).isNotNull();
   }
 
   @Test
@@ -515,23 +526,12 @@ public class ShadowResourcesTest {
   }
 
   @Test
-  @Config(sdk = {Build.VERSION_CODES.JELLY_BEAN, Build.VERSION_CODES.LOLLIPOP, Build.VERSION_CODES.LOLLIPOP_MR1})
-  // todo: get this working on KITKAT
   public void obtainStyledAttributesShouldCheckXmlFirst() throws Exception {
 
     // This simulates a ResourceLoader built from a 21+ SDK as viewportHeight / viewportWidth were introduced in API 21
     // but the public ID values they are assigned clash with private com.android.internal.R values on older SDKs. This
     // test ensures that even on older SDKs, on calls to obtainStyledAttributes() Robolectric will first check for matching
     // resource ID values in the AttributeSet before checking the theme.
-    Map<String, AttrData> attributesTypes = ImmutableMap.<String, AttrData>builder()
-            .put("viewportWidth", new AttrData("viewportWidth", "float", null))
-            .put("viewportHeight", new AttrData("viewportHeight", "float", null))
-            .build();
-    ResourceLoader fakeResourceLoader = new FakeResourceLoader(attributesTypes,
-            new ResourceExtractor(new ResourcePath(Lollipop_R_snippet.class, "android", null, null)));
-
-
-    RuntimeEnvironment.setAppResourceLoader(fakeResourceLoader);
 
     AttributeSet attributes = Robolectric.buildAttributeSet()
         .addAttribute(android.R.attr.viewportWidth, "12.0")
@@ -539,11 +539,33 @@ public class ShadowResourcesTest {
         .build();
 
     TypedArray typedArray = RuntimeEnvironment.application.getTheme().obtainStyledAttributes(attributes, new int[] {
-            Lollipop_R_snippet.attr.viewportWidth,
-            Lollipop_R_snippet.attr.viewportHeight
+        android.R.attr.viewportWidth,
+        android.R.attr.viewportHeight
     }, 0, 0);
     assertThat(typedArray.getFloat(0, 0)).isEqualTo(12.0f);
     assertThat(typedArray.getFloat(1, 0)).isEqualTo(24.0f);
+    typedArray.recycle();
+  }
+
+  @Test
+  public void obtainStyledAttributesShouldCheckXmlFirst_andFollowReferences() throws Exception {
+
+    // This simulates a ResourceLoader built from a 21+ SDK as viewportHeight / viewportWidth were introduced in API 21
+    // but the public ID values they are assigned clash with private com.android.internal.R values on older SDKs. This
+    // test ensures that even on older SDKs, on calls to obtainStyledAttributes() Robolectric will first check for matching
+    // resource ID values in the AttributeSet before checking the theme.
+
+    AttributeSet attributes = Robolectric.buildAttributeSet()
+        .addAttribute(android.R.attr.viewportWidth, "@integer/test_integer1")
+        .addAttribute(android.R.attr.viewportHeight, "@integer/test_integer2")
+        .build();
+
+    TypedArray typedArray = RuntimeEnvironment.application.getTheme().obtainStyledAttributes(attributes, new int[] {
+        android.R.attr.viewportWidth,
+        android.R.attr.viewportHeight
+    }, 0, 0);
+    assertThat(typedArray.getFloat(0, 0)).isEqualTo(2000);
+    assertThat(typedArray.getFloat(1, 0)).isEqualTo(9);
     typedArray.recycle();
   }
 
@@ -555,12 +577,14 @@ public class ShadowResourcesTest {
   }
 
   @Test
-  @Config(sdk = Build.VERSION_CODES.KITKAT)
+  @Config(sdk = KITKAT)
   public void whenAttrIsNotDefinedInRuntimeSdk_getResourceName_doesntFindRequestedResourceButInsteadFindsInternalResourceWithSameId() {
     // asking for an attr defined after the current SDK doesn't have a defined result; in this case it returns
     //   numberPickerStyle from com.internal.android.R
     assertThat(RuntimeEnvironment.application.getResources().getResourceName(android.R.attr.viewportHeight))
         .isEqualTo("android:attr/numberPickerStyle");
+
+    assertThat(RuntimeEnvironment.application.getResources().getIdentifier("viewportHeight", "attr", "android")).isEqualTo(0);
   }
 
   @Test
@@ -634,6 +658,35 @@ public class ShadowResourcesTest {
     assertThat(blueTextColorHint.resourceId).isEqualTo(android.R.color.darker_gray);
 
     arr.recycle();
+  }
+
+  @Test
+  public void getValueShouldClearTypedArrayBetweenCalls() throws Exception {
+    TypedValue outValue = new TypedValue();
+
+    resources.getValue(R.string.hello, outValue, true);
+    assertThat(outValue.type).isEqualTo(TypedValue.TYPE_STRING);
+    assertThat(outValue.string).isEqualTo(resources.getString(R.string.hello));
+    assertThat(outValue.data).isEqualTo(TypedValue.DATA_NULL_UNDEFINED);
+    assertThat(outValue.assetCookie).isNotEqualTo(0);
+
+    resources.getValue(R.color.blue, outValue, true);
+    assertThat(outValue.type).isEqualTo(TypedValue.TYPE_INT_COLOR_ARGB8);
+    assertThat(outValue.data).isEqualTo(ResourceHelper.getColor("#0000ff"));
+    assertThat(outValue.string).isNull();
+    assertThat(outValue.assetCookie).isEqualTo(TypedValue.DATA_NULL_UNDEFINED);
+
+    resources.getValue(R.integer.loneliest_number, outValue, true);
+    assertThat(outValue.type).isEqualTo(TypedValue.TYPE_INT_HEX);
+    assertThat(outValue.data).isEqualTo(1);
+    assertThat(outValue.string).isNull();
+    assertThat(outValue.assetCookie).isEqualTo(TypedValue.DATA_NULL_UNDEFINED);
+
+    resources.getValue(R.bool.true_bool_value, outValue, true);
+    assertThat(outValue.type).isEqualTo(TypedValue.TYPE_INT_BOOLEAN);
+    assertThat(outValue.data).isEqualTo(1);
+    assertThat(outValue.string).isNull();
+    assertThat(outValue.assetCookie).isEqualTo(TypedValue.DATA_NULL_UNDEFINED);
   }
 
   @Test
